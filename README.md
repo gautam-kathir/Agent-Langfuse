@@ -1,36 +1,91 @@
-# LangGraph Multi-Tool Agent with Gemini & Langfuse
+# Multi-Tool AI Agent Ecosystem: LangGraph, Temporal, and Langfuse
 
-This repository contains a minimal, production-ready AI agent built using **LangGraph**. The agent uses **Google Gemini 1.5** to dynamically decide when to execute tools and loops through tasks until it gathers all necessary information to answer a user's prompt. All agent operations are tracked locally or in the cloud using **Langfuse**.
+This repository contains two distinct, battle-tested architectural implementations of a multi-tool AI Agent powered by **Google Gemini**. Both implementations dynamically decide when to execute tools and loop through tasks until they gather enough information to answer a user's prompt. 
 
-## What the Code Does
+Telemetry, token counts, prompt metrics, and costs are tracked continuously using a local **Langfuse** engine.
 
-When a user asks a complex question that requires external data, the script orchestrates the following automated loop:
+---
 
-1. **Evaluates Intent:** Google Gemini reads the user's prompt and determines if it needs specialized tools to answer the request.
-2. **Executes Tools:** If required, LangGraph pauses the model and routes control to a dedicated execution node to fetch data from custom tools (e.g., pulling local weather or city population numbers).
-3. **Appends & Loops:** The data fetched by the tools is appended to a shared memory state. The workflow loops back to Gemini, allowing it to inspect the new data.
-4. **Finalizes Response:** Once the model confirms it has all the details it needs, it breaks out of the loop and returns a cohesive conversational summary to the terminal.
+## Architecture Archetypes
 
-## Core Features
+### 1. LangGraph Implementation (`agent.py`)
+* **Best For:** Rapid prototyping, visual design experimentation, and modeling complex multi-agent conversations.
+* **How it works:** It models your loops visually as a cyclic state graph. LangGraph orchestrates the state machine via nodes and conditional edges.
+* **Limitation:** Runs purely in-memory/process; if the host machine crashes mid-loop, active states are lost.
 
-* **State Management:** Uses LangGraph's unified memory system (`State`) to pass chat history cleanly between nodes.
-* **Cyclic Logic:** Rather than a simple linear pipeline, the agent loops dynamically based on how many tool calls the LLM requests.
-* **Observability Ecosystem:** Uses Langfuse's standard `CallbackHandler` to capture every step of the graph, showing exactly how long individual nodes took to execute, what prompts were sent, and token metrics.
+### 2. Temporal Implementation (`agent_temporal.py`)
+* **Best For:** Enterprise production infrastructure, heavy long-running background tasks, and critical durability.
+* **How it works:** Replaces abstract graph nodes with **Durable Temporal Activities** and native Python `while` loops. 
+* **Advantage:** If your server or API goes down mid-execution, Temporal freezes the exact state and resumes precisely where it left off, avoiding duplicate LLM costs and data loss.
 
-## Visual Workflow Diagram
+---
+
+## Shared Capabilities (The Core Agent)
+
+Both environments share the exact same multi-tool logic:
+* **LLM Engine:** Utilizes `gemini-1.5-flash` natively bound to tools.
+* **Dynamic Multi-Tool Loops:** Gemini evaluates the prompt and can request parallel tool executions (e.g., retrieving weather or checking population sizes) sequentially until it resolves the answer.
+* **Observability:** Leverages Langfuse's `CallbackHandler` to capture nested traces. In the Temporal module, the `workflow_id` is linked as the Langfuse `session_id` to unify infrastructure logs with semantic LLM metrics.
+
+---
+
+## File Structure
 
 ```text
-[START] ──> [ Agent Node (Gemini) ] ──(Has Tool Requests?)──> YES ──> [ Tools Node ]
-                     │                                                      │
-                     └── (No Tool Requests / Finished) ──> [END] <──────────┘
+├── agent.py               # Cyclic Agent built using LangGraph
+├── agent_temporal.py      # Resilient, Durable Agent built using Temporal
+├── setup.sh               # Local environment secrets and endpoints
+└── README.md              # Project onboarding guide
 ```
 
-## How to Run It
+---
 
-1. Set up your environment variables via your `setup.sh` file.
-2. Run the application:
-   ```bash
-   source setup.sh
-   python agent.py
-   ```
-3. Open your browser to `http://localhost:3000` to review the execution tree inside your local Langfuse instance.
+## Getting Started
+
+### 1. Fire Up Local Infrastructure
+Start your local Temporal dev server engine in a separate terminal:
+```bash
+temporal server start-dev
+```
+
+Launch your local Langfuse instance via Docker:
+```bash
+docker compose up -d
+```
+
+### 2. Install Virtual Environment Dependencies
+Ensure your `.venv` is active and install the complete combined stack packages:
+```bash
+pip install -U langgraph langchain-google-genai langfuse langchain temporalio
+```
+
+### 3. Load Credentials (`setup.sh`)
+Populate your environment variables with your target endpoints:
+```bash
+export GOOGLE_API_KEY="AIzaSy..."
+export LANGFUSE_PUBLIC_KEY="pk-lf-..."
+export LANGFUSE_SECRET_KEY="sk-lf-..."
+export LANGFUSE_HOST="http://localhost:3000"
+```
+
+### 4. Running the Implementations
+
+**To run the LangGraph prototyping app:**
+```bash
+source setup.sh
+python agent.py
+```
+
+**To run the production-grade Temporal durable workflow:**
+```bash
+source setup.sh
+python agent_temporal.py
+```
+
+---
+
+## Monitoring Dashboards
+
+* **Temporal Console ([http://localhost:8233](http://localhost:8233)):** Monitor execution heartbeats, fine-grained activity retry lifecycles, and view live execution stack traces.
+* **Langfuse Dashboard ([http://localhost:3000](http://localhost:3000)):** Inspect semantic prompt trees, trace system prompt overrides, evaluate agent completions, and audit token API expenses.
+
